@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="今月あといくら？">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>今月あといくら？</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f4f6f8;color:#202124;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans JP",sans-serif}
+.app{max-width:560px;margin:auto;padding:env(safe-area-inset-top) 15px 34px}.top{display:flex;justify-content:space-between;align-items:center;padding:16px 2px 12px}h1{font-size:21px;margin:0}
+.card{background:#fff;border-radius:20px;padding:18px;margin:10px 0;box-shadow:0 3px 16px #0000000a}.hero{text-align:center;padding:23px 18px}
+.label{font-size:13px;color:#70757a}.remain{font-size:43px;font-weight:850;letter-spacing:-1px;margin:4px 0}.sub{font-size:13px;color:#666}.danger{color:#c62828!important}.ok{color:#24743a!important}
+.progress{height:11px;background:#eceff1;border-radius:99px;overflow:hidden;margin:15px 0}.bar{height:100%;width:0;background:#202124;transition:.25s}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.stat{background:#f7f8f9;border-radius:14px;padding:12px;text-align:left}.num{font-size:20px;font-weight:750;margin-top:2px}
+.row{display:flex;gap:9px}.row>*{min-width:0;flex:1}input,select,button{font:inherit;border:1px solid #ddd;border-radius:12px;padding:12px;background:#fff}button{background:#202124;color:#fff;border:0;font-weight:700}.primary{width:100%;margin-top:9px;padding:14px;font-size:16px}
+.tabs{display:flex;gap:7px;margin-bottom:9px}.tab{flex:1;background:#eee;color:#444;padding:10px}.tab.active{background:#202124;color:#fff}
+.item{display:flex;justify-content:space-between;gap:10px;padding:13px 0;border-bottom:1px solid #eee}.item:last-child{border:0}.amt{font-weight:750;white-space:nowrap}.meta{font-size:12px;color:#777;margin-top:3px}.del{background:#eee;color:#555;padding:7px 9px;margin-left:6px;font-size:12px}
+.category{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.chip{background:#f0f1f2;color:#444;padding:7px 10px;border-radius:99px;font-size:12px}.small{font-size:12px;color:#888}
+.settings{display:none}.settings.show{display:block}.hidden{display:none!important}
+footer{text-align:center;color:#999;font-size:11px;margin-top:14px}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top"><h1>💰 今月あといくら？</h1><button onclick="toggleSettings()" style="padding:8px 10px">⚙️</button></div>
+
+  <section class="card hero">
+    <div class="label" id="monthTitle">今月の残り</div>
+    <div id="remain" class="remain">¥0</div>
+    <div id="status" class="sub">予算を設定してください</div>
+    <div class="progress"><div id="bar" class="bar"></div></div>
+    <div class="grid">
+      <div class="stat"><div class="label">予算</div><div id="budgetOut" class="num">¥0</div></div>
+      <div class="stat"><div class="label">使用額</div><div id="spent" class="num">¥0</div></div>
+      <div class="stat"><div class="label">今日使える目安</div><div id="daily" class="num">¥0</div></div>
+      <div class="stat"><div class="label">今月あと</div><div id="days" class="num">0日</div></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <strong>＋ 支出を追加</strong>
+    <div class="row" style="margin-top:10px">
+      <input id="amount" type="number" min="1" placeholder="金額">
+      <select id="category"></select>
+    </div>
+    <input id="memo" style="width:100%;margin-top:9px" placeholder="メモ（任意）">
+    <button class="primary" onclick="addExpense()">追加する</button>
+  </section>
+
+  <section class="card">
+    <div class="tabs">
+      <button id="tabAll" class="tab active" onclick="setFilter('all')">すべて</button>
+      <button id="tabToday" class="tab" onclick="setFilter('today')">今日</button>
+      <button id="tabCat" class="tab" onclick="setFilter('category')">項目別</button>
+    </div>
+    <div id="categorySummary" class="category hidden"></div>
+    <div id="list"></div>
+  </section>
+
+  <section id="settings" class="card settings">
+    <strong>⚙️ 設定</strong>
+    <div class="label" style="margin-top:12px">月の予算</div>
+    <div class="row" style="margin-top:6px"><input id="budget" type="number" min="0" step="100"><button onclick="saveBudget()">保存</button></div>
+    <div class="label" style="margin-top:15px">支出項目</div>
+    <div class="row" style="margin-top:6px"><input id="newCat" placeholder="例：ジム"><button onclick="addCategory()">項目追加</button></div>
+    <div id="catManage" class="category"></div>
+    <button onclick="resetMonth()" style="width:100%;margin-top:15px;background:#eee;color:#c62828">今月の支出を全削除</button>
+  </section>
+  <footer>端末内に保存される家計ミニアプリ。通信なしでも基本機能を利用できます。</footer>
+</div>
+
+<script>
+const KEY='monthly_budget_pwa_v2';
+const defaults=['食費','日用品','交通費','遊び','その他'];
+function ym(d=new Date()){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')}
+function fresh(){return {month:ym(),budget:30000,categories:[...defaults],items:[]}}
+let d=JSON.parse(localStorage.getItem(KEY)||'null')||fresh();
+if(d.month!==ym()){d.month=ym();d.items=[];save()}
+let filter='all';
+
+function save(){localStorage.setItem(KEY,JSON.stringify(d))}
+function yen(n){return '¥'+Math.round(n).toLocaleString('ja-JP')}
+function dateKey(x){return x.slice(0,10)}
+function todayKey(){let x=new Date();return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0')}
+function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+
+function render(){
+  document.getElementById('budget').value=d.budget;
+  document.getElementById('budgetOut').textContent=yen(d.budget);
+  const spent=d.items.reduce((s,x)=>s+x.amount,0), remain=d.budget-spent;
+  document.getElementById('remain').textContent=yen(remain);
+  document.getElementById('remain').className='remain '+(remain<0?'danger':'');
+  document.getElementById('spent').textContent=yen(spent);
+  const now=new Date(), last=new Date(now.getFullYear(),now.getMonth()+1,0).getDate(), left=Math.max(1,last-now.getDate()+1);
+  document.getElementById('daily').textContent=yen(Math.max(0,remain)/left);
+  document.getElementById('days').textContent=left+'日';
+  document.getElementById('status').textContent=remain<0?'予算オーバー！':`1日あたり約 ${yen(Math.max(0,remain)/left)} まで`;
+  document.getElementById('status').className='sub '+(remain<0?'danger':'ok');
+  document.getElementById('bar').style.width=Math.min(100,d.budget?spent/d.budget*100:0)+'%';
+  const sel=document.getElementById('category');sel.innerHTML=d.categories.map(c=>`<option>${esc(c)}</option>`).join('');
+  document.getElementById('catManage').innerHTML=d.categories.map(c=>`<span class="chip">${esc(c)} ${d.categories.length>1?`<button onclick="removeCategory('${esc(c)}')" style="padding:2px 6px;background:#ddd;color:#555">×</button>`:''}</span>`).join('');
+  renderList();
+}
+function renderList(){
+  const list=document.getElementById('list'), sum=document.getElementById('categorySummary');
+  if(filter==='category'){
+    sum.classList.remove('hidden');
+    const totals={};d.items.forEach(x=>totals[x.category]=(totals[x.category]||0)+x.amount);
+    sum.innerHTML=Object.entries(totals).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span class="chip">${esc(k)} ${yen(v)}</span>`).join('')||'<span class="small">まだ支出がありません</span>';
+  }else sum.classList.add('hidden');
+  let items=[...d.items];if(filter==='today')items=items.filter(x=>dateKey(x.date)===todayKey());
+  list.innerHTML=items.length?items.map(x=>`<div class="item"><div><b>${esc(x.category)}</b><div class="meta">${esc(x.date)}${x.memo?' ・ '+esc(x.memo):''}</div></div><div><span class="amt">${yen(x.amount)}</span><button class="del" onclick="removeItem(${x.id})">削除</button></div></div>`).join(''):'<div class="small" style="padding:18px 0;text-align:center">支出がありません</div>';
+}
+function addExpense(){
+  const amount=Number(document.getElementById('amount').value);if(!amount)return;
+  const now=new Date();
+  d.items.unshift({id:Date.now(),amount,category:document.getElementById('category').value,memo:document.getElementById('memo').value.trim(),date:now.toISOString().slice(0,10)});
+  document.getElementById('amount').value='';document.getElementById('memo').value='';save();render()
+}
+function removeItem(id){d.items=d.items.filter(x=>x.id!==id);save();render()}
+function saveBudget(){d.budget=Math.max(0,Number(document.getElementById('budget').value)||0);save();render()}
+function addCategory(){let x=document.getElementById('newCat').value.trim();if(x&&!d.categories.includes(x)){d.categories.push(x);document.getElementById('newCat').value='';save();render()}}
+function removeCategory(x){if(d.categories.length<=1)return;if(confirm(`「${x}」を削除しますか？（既存の支出は残ります）`)){d.categories=d.categories.filter(c=>c!==x);save();render()}}
+function setFilter(x){filter=x;['All','Today','Cat'].forEach(a=>document.getElementById('tab'+a).classList.remove('active'));document.getElementById('tab'+(x==='all'?'All':x==='today'?'Today':'Cat')).classList.add('active');renderList()}
+function toggleSettings(){document.getElementById('settings').classList.toggle('show')}
+function resetMonth(){if(confirm('今月の支出をすべて削除しますか？')){d.items=[];save();render()}}
+render();
+</script>
+</body>
+</html>
